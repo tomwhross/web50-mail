@@ -4,24 +4,47 @@ document.addEventListener('DOMContentLoaded', function() {
   document.querySelector('#inbox').addEventListener('click', () => load_mailbox('inbox'));
   document.querySelector('#sent').addEventListener('click', () => load_mailbox('sent'));
   document.querySelector('#archived').addEventListener('click', () => load_mailbox('archive'));
-  document.querySelector('#compose').addEventListener('click', compose_email);
+  document.querySelector('#compose').addEventListener('click', () => compose_email());
 
   // By default, load the inbox
   load_mailbox('inbox');
 });
 
-function compose_email() {
+function compose_email(sender, subject, body, time_sent) {
+  // compose_email takes 4 optional params
+  // for the original sender, subject, body, and time_sent
+  // used if the user is replying to an email
 
   // Show compose view and hide other views
   document.querySelector('#emails-view').style.display = 'none';
   document.querySelector('#email-view').style.display = 'none';
   document.querySelector('#compose-view').style.display = 'block';
 
-  // Clear out composition fields
-  document.querySelector('#compose-recipients').value = '';
-  document.querySelector('#compose-subject').value = '';
-  document.querySelector('#compose-body').value = '';
+  // Clear out composition fields if none passed from a reply request
+  if (subject === undefined) {
+    document.querySelector('#compose-subject').value = '';
+  }
+  else {
+    document.querySelector('#compose-subject').value = 'Re: '.concat(subject);
+  }
 
+  if (sender === undefined) {
+    document.querySelector('#compose-recipients').value = '';
+  }
+  else {
+    document.querySelector('#compose-recipients').value = sender;
+  }
+
+  if (body === undefined || time_sent === undefined) {
+    document.querySelector('#compose-body').value = '';
+  }
+  else {
+    reply_body = `On ${time_sent} ${sender} wrote: \n`;
+    reply_body = reply_body.concat(body);
+    document.querySelector('#compose-body').value = reply_body;
+  }
+  
+  // submit the reply
   document.querySelector('#compose-form').onsubmit = function() {
     fetch('/emails', {
       method: 'POST',
@@ -39,23 +62,23 @@ function compose_email() {
   }
 }
 
-
-
 function load_email(email_id) {
+  
+  // show the email and hide the other views
   document.querySelector('#emails-view').style.display = 'none';
   document.querySelector('#compose-view').style.display = 'none';
   document.querySelector('#email-view').style.display = 'block';
 
+  // create an element to display the email and blank it out
   const email_view = document.querySelector('#email-view'); 
-
   email_view.innerHTML = '';
 
+  // get the email from the server by it's id
   fetch(`/emails/${email_id}`)
   .then(response => response.json())
   .then(email => {
 
-    console.log(`email ${email.subject} is read: ${email.read}`);
-
+    // once retrieved, mark the email as read
     fetch(`/emails/${email.id}`, {
       method: 'PUT',
       body: JSON.stringify({
@@ -63,12 +86,12 @@ function load_email(email_id) {
       })
     })
     
-    console.log(`user: ${email.user} and sender: ${email.sender}`);
-
+    // create elements to display the email components
     const sender = document.createElement('div');
     const subject = document.createElement('div');
     const time_sent = document.createElement('div');
     const body = document.createElement('div');
+    body.style.whiteSpace = 'pre';
     const horizontal_rule = document.createElement('hr')
     const line_break = document.createElement('br');
     const reply_button = document.createElement('button');
@@ -82,6 +105,7 @@ function load_email(email_id) {
     reply_button.innerHTML = 'Reply';
     reply_button.style.margin = '2px';
 
+    // if the email is archived, show a different button
     if (email.archived === true) {
       archive_button.className = 'btn btn-sm btn-primary';
       archive_button.innerHTML = 'Unarchive';
@@ -92,12 +116,21 @@ function load_email(email_id) {
     }
     
     archive_button.style.margin = '2px';
+
+    // seems like javascript innerHTML + chrome doesn't respect
+    // newline characters
+    // tried with textContent but still no luck
+    // body.innerHTML = email.body.replace(/(\r\n|\n|\r)/gm, '<br>');
     body.innerHTML = email.body;
 
+    // when the user hits the Reply button, take them to the componse form
+    // and prepopulate the form from the original email
     reply_button.addEventListener('click', function() {
-      console.log('This element has been clicked!')
+      compose_email(email.sender, email.subject, email.body, email.timestamp);
     });
 
+    // when the user clicks the archive/unarchive button
+    // set the state and redraw the button
     var archived_state = email.archived;
     archive_button.addEventListener('click', function() {
       archived_state = !archived_state;
@@ -107,18 +140,23 @@ function load_email(email_id) {
             archived: archived_state
         })
       })
-
-      if (archived_state === true) {
-        this.className = 'btn btn-sm btn-primary';
-        this.innerHTML = 'Unarchive';
-      }
-      else {
-        this.className = 'btn btn-sm btn-outline-primary';
-        this.innerHTML = 'Archive';
-      }
-
+      .then(function() {
+        if (archived_state === true) {
+          this.className = 'btn btn-sm btn-primary';
+          this.innerHTML = 'Unarchive';
+        }
+        else {
+          this.className = 'btn btn-sm btn-outline-primary';
+          this.innerHTML = 'Archive';
+        }
+      })
+      .then(function() {
+        // reload the inbox
+        load_mailbox('inbox');
+      })
     });
 
+    // add everything back to the DOM
     email_view.append(sender);
     email_view.append(subject);
     email_view.append(time_sent);
@@ -149,60 +187,62 @@ function load_mailbox(mailbox) {
   .then(response => response.json())
   .then(emails => {
 
-      // for each of the emails
-      emails.forEach(function(email) {
+    console.log(emails);
 
-        // create a row div and set some style properties
-        const div_row = document.createElement('div');
-        div_row.className = 'row email-row';
-        div_row.style.border = 'thin solid #007bff';
-        div_row.style.padding = '5px';
-        div_row.style.margin = '5px';
+    // for each of the emails
+    emails.forEach(function(email) {
 
-        div_row.onclick = function() {
-          load_email(email.id);
-        }
+      // create a row div and set some style properties
+      const div_row = document.createElement('div');
+      div_row.className = 'row email-row';
+      div_row.style.border = 'thin solid #007bff';
+      div_row.style.padding = '5px';
+      div_row.style.margin = '5px';
 
-        // read emails should have a grey background
-        if (email.read === true) {
-          div_row.style.backgroundColor = '#CECECE';
-        }
+      div_row.onclick = function() {
+        load_email(email.id);
+      }
 
-        // create columns in the row for sender, subject, and sent time
-        const sender = document.createElement('div');
-        sender.className = 'col-sm';
-        sender.style.textAlign = 'center';
+      // read emails should have a grey background
+      if (email.read === true) {
+        div_row.style.backgroundColor = '#CECECE';
+      }
 
-        const subject = document.createElement('div');
-        subject.className = 'col-sm';
-        subject.style.textAlign = 'center';
+      // create columns in the row for sender, subject, and sent time
+      const sender = document.createElement('div');
+      sender.className = 'col-sm';
+      sender.style.textAlign = 'center';
 
-        const sent_time = document.createElement('div');
-        sent_time.className = 'col-sm';
-        sent_time.style.textAlign = 'center';
+      const subject = document.createElement('div');
+      subject.className = 'col-sm';
+      subject.style.textAlign = 'center';
 
-        // add the content to the divs
-        sender.innerHTML = email.sender;
+      const sent_time = document.createElement('div');
+      sent_time.className = 'col-sm';
+      sent_time.style.textAlign = 'center';
 
-        // if the email subject is greater than 40 characters
-        // truncate to 40 chars and add '...' so the row
-        // height remains constant
-        if (email.subject.length > 40) {
-          subject.innerHTML = email.subject.substring(0, 40).concat('...');
-        }
-        else {
-          subject.innerHTML = email.subject;
-        }
-        
-        sent_time.innerHTML = email.timestamp;
+      // add the content to the divs
+      sender.innerHTML = email.sender;
 
-        // add the columns to the row
-        div_row.append(sender);
-        div_row.append(subject);
-        div_row.append(sent_time);
+      // if the email subject is greater than 40 characters
+      // truncate to 40 chars and add '...' so the row
+      // height remains constant
+      if (email.subject.length > 40) {
+        subject.innerHTML = email.subject.substring(0, 40).concat('...');
+      }
+      else {
+        subject.innerHTML = email.subject;
+      }
+      
+      sent_time.innerHTML = email.timestamp;
 
-        // add the row to the list container
-        emails_list.append(div_row);
+      // add the columns to the row
+      div_row.append(sender);
+      div_row.append(subject);
+      div_row.append(sent_time);
+
+      // add the row to the list container
+      emails_list.append(div_row);
     });
   });
 
